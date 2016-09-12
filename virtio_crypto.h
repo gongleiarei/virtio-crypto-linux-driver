@@ -5,6 +5,20 @@
 //#include <linux/virtio_ids.h>
 #include <linux/virtio_config.h>
 
+struct virtio_crypto_iovec {
+	/* Guest physical address */
+	__virtio64 addr;
+	/* Length of guest physical address */
+	__virtio32 len;
+
+/* This marks a buffer as continuing via the next field */
+#define VIRTIO_CRYPTO_IOVEC_F_NEXT 1
+	/* The flags as indicated above. */
+	__virtio32 flags;
+	/* Pointer to next struct virtio_crypto_iovec if flags & NEXT */
+	__virtio64 next_iovec;
+};
+
 
 #define VIRTIO_CRYPTO_SERVICE_CIPHER (0)
 #define VIRTIO_CRYPTO_SERVICE_HASH (1)
@@ -13,23 +27,23 @@
 
 #define VIRTIO_CRYPTO_OPCODE(service, op)   ((service << 8) | (op))
 
-struct virtio_crypto_ctrl_header{
+struct virtio_crypto_ctrl_header {
 #define VIRTIO_CRYPTO_CIPHER_CREATE_SESSION \
-	VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_CIPHER, 0x02)
+	   VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_CIPHER, 0x02)
 #define VIRTIO_CRYPTO_CIPHER_DESTROY_SESSION \
-	VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_CIPHER, 0x03)
+	   VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_CIPHER, 0x03)
 #define VIRTIO_CRYPTO_HASH_CREATE_SESSION \
-	VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_HASH, 0x02)
+	   VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_HASH, 0x02)
 #define VIRTIO_CRYPTO_HASH_DESTROY_SESSION \
-	VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_HASH, 0x03)
+	   VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_HASH, 0x03)
 #define VIRTIO_CRYPTO_MAC_CREATE_SESSION \
-	VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_MAC, 0x02)
+	   VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_MAC, 0x02)
 #define VIRTIO_CRYPTO_MAC_DESTROY_SESSION \
-	(VIRTIO_CRYPTO_SERVICE_MAC, 0x03)
+	   VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_MAC, 0x03)
 #define VIRTIO_CRYPTO_AEAD_CREATE_SESSION \
-	(VIRTIO_CRYPTO_SERVICE_AEAD, 0x02)
+	   VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_AEAD, 0x02)
 #define VIRTIO_CRYPTO_AEAD_DESTROY_SESSION \
-	VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_AEAD, 0x03)
+	   VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_AEAD, 0x03)
 	__virtio32 opcode;
 	__virtio32 algo;
 	__virtio32 flag;
@@ -65,14 +79,14 @@ struct virtio_crypto_cipher_session_para {
 };
 
 struct virtio_crypto_session_input {
-	// Device-writable part
+	/* Device-writable part */
 	__virtio64 session_id;
 	__virtio32 status;
 	__virtio32 padding;
 };
 
 struct virtio_crypto_cipher_session_output {
-	__virtio64 key_addr; /* guest key phycial address */
+	__virtio64 key_addr; /* guest key physical address */
 };
 
 struct virtio_crypto_cipher_session_req {
@@ -126,12 +140,12 @@ struct virtio_crypto_mac_session_para {
 	/* hash result length */
 	__virtio32 hash_result_len;
 	/* length of authenticated key */
-	__virtio32 auth_key_len; 
+	__virtio32 auth_key_len;
 	__virtio32 padding;
 };
 
 struct virtio_crypto_mac_session_output {
-	__virtio64 auth_key_addr; /* guest key phyical address */
+	__virtio64 auth_key_addr; /* guest key physical address */
 };
 
 struct virtio_crypto_mac_create_session_req {
@@ -158,7 +172,7 @@ struct virtio_crypto_aead_session_para {
 };
 
 struct virtio_crypto_aead_session_output {
-	__virtio64 key_addr; /* guest key phycial address */
+	__virtio64 key_addr; /* guest key physical address */
 };
 
 struct virtio_crypto_aead_create_session_req {
@@ -205,7 +219,7 @@ struct virtio_crypto_sym_create_session_req {
 		struct virtio_crypto_alg_chain_session_req chain;
 	} u;
 
-	// Device-readable part
+	/* Device-readable part */
 
 /* No operation */
 #define VIRTIO_CRYPTO_SYM_OP_NONE  0
@@ -219,9 +233,9 @@ struct virtio_crypto_sym_create_session_req {
 };
 
 struct virtio_crypto_destroy_session_req {
-	// Device-readable part
+	/* Device-readable part */
 	__virtio64  session_id;
-	// Device-writable part
+	/* Device-writable part */
 	__virtio32  status;
 	__virtio32  padding;
 };
@@ -252,7 +266,7 @@ struct virtio_crypto_op_header {
 	VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_AEAD, 0x00)
 #define VIRTIO_CRYPTO_AEAD_DECRYPT \
 	VIRTIO_CRYPTO_OPCODE(VIRTIO_CRYPTO_SERVICE_AEAD, 0x01)
-	__virtio32 opcode; 
+	__virtio32 opcode;
 	/* algo should be service-specific algorithms */
 	__virtio32 algo;
 	/* session_id should be service-specific algorithms */
@@ -263,8 +277,8 @@ struct virtio_crypto_op_header {
 };
 
 struct virtio_crypto_sym_input {
-	/* destination data guest address, it's useless for plain HASH and MAC */
-	__virtio64 dst_data_addr;
+	/* destination data, it's useless for plain HASH and MAC */
+	struct virtio_crypto_iovec dst_data;
 	/* digest result guest address, it's useless for plain cipher algos */
 	__virtio64 digest_result_addr;
 
@@ -286,8 +300,10 @@ struct virtio_crypto_cipher_input {
 };
 
 struct virtio_crypto_cipher_output {
-	__virtio64 iv_addr; /* iv guest address */
-	__virtio64 src_data_addr; /* source data guest address */
+	/* iv guest address */
+	__virtio64 iv_addr;
+	/* source data */
+	struct virtio_crypto_iovec src_data;
 };
 
 struct virtio_crypto_hash_input {
@@ -295,10 +311,8 @@ struct virtio_crypto_hash_input {
 };
 
 struct virtio_crypto_hash_output {
-	/* source data guest address */
-	__virtio64 src_data_addr;
-	/* length of source data */
-	__virtio32 src_data_len;
+	/* source data */
+	struct virtio_crypto_iovec src_data;
 	__virtio32 padding;
 };
 
@@ -326,29 +340,31 @@ struct virtio_crypto_aead_input {
 
 struct virtio_crypto_aead_output {
 	__virtio64 iv_addr; /* iv guest address */
-	__virtio64 src_data_addr; /* source data guest address */
-	__virtio64 add_data_addr; /* additional auth data guest address */
+	/* source data */
+	struct virtio_crypto_iovec src_data;
+	/* additional auth data guest address */
+	struct virtio_crypto_iovec add_data;
 };
 
 struct virtio_crypto_cipher_data_req {
-	// Device-readable part
+	/* Device-readable part */
 	struct virtio_crypto_cipher_para para;
 	struct virtio_crypto_cipher_output odata;
-	// Device-writable part
+	/* Device-writable part */
 	struct virtio_crypto_cipher_input idata;
 };
 
 struct virtio_crypto_hash_data_req {
-	// Device-readable part
+	/* Device-readable part */
 	struct virtio_crypto_hash_output odata;
-	// Device-writable part
+	/* Device-writable part */
 	struct virtio_crypto_hash_input idata;
 };
 
 struct virtio_crypto_mac_data_req {
-	// Device-readable part
+	/* Device-readable part */
 	struct virtio_crypto_mac_output odata;
-	// Device-writable part
+	/* Device-writable part */
 	struct virtio_crypto_mac_input idata;
 };
 
@@ -357,12 +373,12 @@ struct virtio_crypto_alg_chain_data_para {
 };
 
 struct virtio_crypto_alg_chain_data_output {
+	/* Device-writable part */
 	struct virtio_crypto_cipher_output cipher;
 
-	// Device-readable part
-	__virtio64 aad_data_addr; /* additional auth data guest address */
-	__virtio32 aad_len; /* length of additional auth data */
-	__virtio32 padding;
+	/* Device-readable part */
+	/* additional auth data guest address */
+	struct virtio_crypto_iovec add_data;
 };
 
 struct virtio_crypto_alg_chain_data_input {
@@ -370,10 +386,10 @@ struct virtio_crypto_alg_chain_data_input {
 };
 
 struct virtio_crypto_alg_chain_data_req {
-	// Device-readable part
+	/* Device-readable part */
 	struct virtio_crypto_alg_chain_data_para para;
 	struct virtio_crypto_alg_chain_data_output odata;
-	// Device-writable part
+	/* Device-writable part */
 	struct virtio_crypto_alg_chain_data_input idata;
 };
 
@@ -383,7 +399,7 @@ struct virtio_crypto_sym_data_req {
 		struct virtio_crypto_alg_chain_data_req chain;
 	} u;
 
-	// Device-readable part
+	/* Device-readable part */
 
 	/* See above VIRTIO_CRYPTO_SYM_OP_* */
 	__virtio32 op_type;
@@ -391,10 +407,10 @@ struct virtio_crypto_sym_data_req {
 };
 
 struct virtio_crypto_aead_data_req {
-	// Device-readable part
+	/* Device-readable part */
 	struct virtio_crypto_aead_para para;
 	struct virtio_crypto_aead_output odata;
-	// Device-writable part
+	/* Device-writable part */
 	struct virtio_crypto_aead_input idata;
 };
 
@@ -432,7 +448,7 @@ struct virtio_crypto_config {
 	/* Specifies the services mask which the devcie support,
 	   see VIRTIO_CRYPTO_SERVICE_* above */
 	__virtio32 crypto_services;
-	
+
 	/* Detailed algorithms mask */
 	__virtio32 cipher_algo_l;
 	__virtio32 cipher_algo_h;
@@ -442,7 +458,7 @@ struct virtio_crypto_config {
 	__virtio32 asym_algo;
 	__virtio32 kdf_algo;
 	__virtio32 aead_algo;
-	__virtio32 primitive_algo; 
+	__virtio32 primitive_algo;
 };
 
 #endif
