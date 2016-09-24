@@ -35,14 +35,14 @@ static void virtcrypto_dataq_callback(struct virtqueue *vq)
 		while ((vc_req = virtqueue_get_buf(vq, &len)) != NULL) {
 			if (vc_req->type == VIRTIO_CRYPTO_SYM_OP_CIPHER) {
 				switch (vc_req->req_data->u.sym_req.u.cipher.idata.input.status) {
-				case VIRTIO_CRYPTO_OP_OK:
+				case VIRTIO_CRYPTO_OK:
 					error = 0;
 					break;
-				case VIRTIO_CRYPTO_OP_INVSESS:
-				case VIRTIO_CRYPTO_OP_ERR:
+				case VIRTIO_CRYPTO_INVSESS:
+				case VIRTIO_CRYPTO_ERR:
 					error = -EINVAL;
 					break;
-				case VIRTIO_CRYPTO_OP_BADMSG:
+				case VIRTIO_CRYPTO_BADMSG:
 					error = -EBADMSG;
 					break;
 				default:

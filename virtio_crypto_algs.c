@@ -71,7 +71,7 @@ static int virtio_crypto_alg_ablkcipher_init_session(
 
 	/* AES-CBC is a cipher algorithm */
 	input = &ctrl.u.sym_create_session.u.cipher.input;
-	input->status = VIRTIO_CRYPTO_OP_ERR;
+	input->status = VIRTIO_CRYPTO_ERR;
 	/* Pad cipher's parameters */
 	ctrl.u.sym_create_session.op_type = VIRTIO_CRYPTO_SYM_OP_CIPHER;
 	ctrl.u.sym_create_session.u.cipher.para.algo = ctrl.header.algo;
@@ -97,7 +97,7 @@ static int virtio_crypto_alg_ablkcipher_init_session(
 	       !virtqueue_is_broken(vcrypto->ctrl_vq))
 		cpu_relax();
 
-	if (input->status != VIRTIO_CRYPTO_OP_OK) {
+	if (input->status != VIRTIO_CRYPTO_OK) {
 		printk(KERN_ERR "Create session failed "
 			"status = %u, session_id=0x%llx\n", input->status,
 			input->session_id);
@@ -157,7 +157,7 @@ static int virtio_crypto_alg_ablkcipher_close_session(
 	       !virtqueue_is_broken(vcrypto->ctrl_vq))
 		cpu_relax();
 
-	if (destroy_session->status != VIRTIO_CRYPTO_OP_OK) {
+	if (destroy_session->status != VIRTIO_CRYPTO_OK) {
 		printk(KERN_ERR "Close session failed "
 			"status = %u, session_id=0x%llx\n", destroy_session->status,
 			destroy_session->session_id);

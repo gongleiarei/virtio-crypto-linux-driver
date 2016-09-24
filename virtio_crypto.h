@@ -426,11 +426,11 @@ struct virtio_crypto_op_data_req {
 	} u;
 };
 
-#define VIRTIO_CRYPTO_OP_OK        0
-#define VIRTIO_CRYPTO_OP_ERR       1
-#define VIRTIO_CRYPTO_OP_BADMSG    2
-#define VIRTIO_CRYPTO_OP_NOTSUPP   3
-#define VIRTIO_CRYPTO_OP_INVSESS   4 /* Invaild session id */
+#define VIRTIO_CRYPTO_OK        0
+#define VIRTIO_CRYPTO_ERR       1
+#define VIRTIO_CRYPTO_BADMSG    2
+#define VIRTIO_CRYPTO_NOTSUPP   3
+#define VIRTIO_CRYPTO_INVSESS   4 /* Invaild session id */
 
 /* The accelerator hardware is ready */
 #define VIRTIO_CRYPTO_S_HW_READY  (1 << 0)
@@ -455,10 +455,8 @@ struct virtio_crypto_config {
 	__virtio32 hash_algo;
 	__virtio32 mac_algo_l;
 	__virtio32 mac_algo_h;
-	__virtio32 asym_algo;
-	__virtio32 kdf_algo;
 	__virtio32 aead_algo;
-	__virtio32 primitive_algo;
+	__virtio32 reserve;
 };
 
 #endif
