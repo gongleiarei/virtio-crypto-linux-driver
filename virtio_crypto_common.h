@@ -15,12 +15,12 @@
 /*
  * Debugging
  */
-/* #define DEBUG_VIRTIO_CRYPTO */
+ #define DEBUG_VIRTIO_CRYPTO
 
 #ifdef DEBUG_VIRTIO_CRYPTO
 #define DPRINTK(fmt,arg...) printk(KERN_ERR "%s: " fmt, __func__ , ##arg)
 #else
-#define DPRINTK(fmt,arg...) printk(KERN_DEBUG "%s: " fmt, __func__ , ##arg)
+#define DPRINTK(fmt,arg...) do { } while (0)
 #endif
 
 

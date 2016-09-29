@@ -373,11 +373,10 @@ struct virtio_crypto_alg_chain_data_para {
 };
 
 struct virtio_crypto_alg_chain_data_output {
-	/* Device-writable part */
-	struct virtio_crypto_cipher_output cipher;
-
 	/* Device-readable part */
-	/* additional auth data guest address */
+	struct virtio_crypto_cipher_output cipher;
+	struct virtio_crypto_hash_output hash;
+	/* Additional auth data guest address */
 	struct virtio_crypto_iovec add_data;
 };
 
