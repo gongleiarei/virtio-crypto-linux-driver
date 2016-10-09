@@ -53,38 +53,45 @@ static int virtio_crypto_alg_ablkcipher_init_session(
 		unsigned int keylen,
 		int encrypt)
 {
-	struct scatterlist sg;
+	struct scatterlist outhdr, key_sg, inhdr, *sgs[3];
 	unsigned int tmp;
-	struct virtio_crypto_session_input *input;
+	struct virtio_crypto_session_input input;
 	struct virtio_crypto_op_ctrl_req ctrl;
 	struct virtio_crypto *vcrypto = ctx->vcrypto;
 	int op = encrypt ? VIRTIO_CRYPTO_OP_ENCRYPT : VIRTIO_CRYPTO_OP_DECRYPT;
 	int err;
+	unsigned int num_out = 0, num_in = 0;
 
 	DPRINTK("Enter...\n");
+
 	memset(&ctrl, 0, sizeof(ctrl));
+	memset(&input, 0, sizeof(input));
 	/* Pad ctrl header */
 	ctrl.header.opcode = VIRTIO_CRYPTO_CIPHER_CREATE_SESSION;
 	ctrl.header.algo = (uint32_t)alg;
 	/* Set the default dataqueue id to 0 */
 	ctrl.header.queue_id = 0;
 
-	/* AES-CBC is a cipher algorithm */
-	input = &ctrl.u.sym_create_session.u.cipher.input;
-	input->status = VIRTIO_CRYPTO_ERR;
+	input.status = VIRTIO_CRYPTO_ERR;
 	/* Pad cipher's parameters */
 	ctrl.u.sym_create_session.op_type = VIRTIO_CRYPTO_SYM_OP_CIPHER;
 	ctrl.u.sym_create_session.u.cipher.para.algo = ctrl.header.algo;
 	ctrl.u.sym_create_session.u.cipher.para.keylen = keylen;
 	ctrl.u.sym_create_session.u.cipher.para.op = op;
 
-	/* Pad cipher's output data */
-	ctrl.u.sym_create_session.u.cipher.out.key_addr =
-	                                            virt_to_phys((void *)key);
+	sg_init_one(&outhdr, &ctrl, sizeof(ctrl));
+	sgs[num_out++] = &outhdr;
 
-	sg_init_one(&sg, &ctrl, sizeof(ctrl));
+	/* Set key */
+	sg_init_one(&key_sg, key, keylen);
+	sgs[num_out++] = &key_sg;
 
-	err = virtqueue_add_inbuf(vcrypto->ctrl_vq, &sg, 1, vcrypto, GFP_KERNEL);
+	/* Return status and session id back */
+	sg_init_one(&inhdr, &input, sizeof(input));
+	sgs[num_out + num_in++] = &inhdr;
+
+	err = virtqueue_add_sgs(vcrypto->ctrl_vq, sgs, num_out,
+	                        num_in, vcrypto, GFP_KERNEL);
 	if (err < 0)
 	    return err;
 	virtqueue_kick(vcrypto->ctrl_vq);
@@ -97,20 +104,20 @@ static int virtio_crypto_alg_ablkcipher_init_session(
 	       !virtqueue_is_broken(vcrypto->ctrl_vq))
 		cpu_relax();
 
-	if (input->status != VIRTIO_CRYPTO_OK) {
+	if (input.status != VIRTIO_CRYPTO_OK) {
 		printk(KERN_ERR "Create session failed "
-			"status = %u, session_id=0x%llx\n", input->status,
-			input->session_id);
+			"status = %u, session_id=0x%llx\n", input.status,
+			input.session_id);
 		return -EINVAL;
 	}
 
 	DPRINTK("Create session successfully "
-			"session_id=0x%llx\n", input->session_id);
+			"session_id=0x%llx\n", input.session_id);
 	spin_lock(&ctx->lock);
 	if (encrypt)
-		ctx->enc_sess_info.session_id = input->session_id;
+		ctx->enc_sess_info.session_id = input.session_id;
 	else
-		ctx->dec_sess_info.session_id = input->session_id;
+		ctx->dec_sess_info.session_id = input.session_id;
 	spin_unlock(&ctx->lock);
 
 	DPRINTK("Exiting\n");
@@ -121,12 +128,14 @@ static int virtio_crypto_alg_ablkcipher_close_session(
 		struct virtio_crypto_ablkcipher_ctx *ctx,
 		int encrypt)
 {
-	struct scatterlist sg;
+	struct scatterlist outhdr, status_sg, *sgs[2];
 	unsigned int tmp;
 	struct virtio_crypto_destroy_session_req *destroy_session;
 	struct virtio_crypto_op_ctrl_req ctrl;
 	struct virtio_crypto *vcrypto = ctx->vcrypto;
 	int err;
+	unsigned int num_out = 0, num_in = 0;
+	uint32_t status = VIRTIO_CRYPTO_ERR;
 
 	DPRINTK("Enter...\n");
 	memset(&ctrl, 0, sizeof(ctrl));
@@ -146,9 +155,15 @@ static int virtio_crypto_alg_ablkcipher_close_session(
 	DPRINTK("Close session, session_id=0x%llx\n",
 			destroy_session->session_id);
 	/* pass session id to host side so that host can close assigned session */
-	sg_init_one(&sg, &ctrl, sizeof(ctrl));
+	sg_init_one(&outhdr, &ctrl, sizeof(ctrl));
+	sgs[num_out++] = &outhdr;
 
-	err = virtqueue_add_inbuf(vcrypto->ctrl_vq, &sg, 1, vcrypto, GFP_KERNEL);
+	/* Return status and session id back */
+	sg_init_one(&status_sg, &status, sizeof(status));
+	sgs[num_out + num_in++] = &status_sg;
+
+	err = virtqueue_add_sgs(vcrypto->ctrl_vq, sgs, num_out,
+	                        num_in, vcrypto, GFP_KERNEL);
 	if (err < 0)
 	    return err;
 	virtqueue_kick(vcrypto->ctrl_vq);
@@ -157,9 +172,9 @@ static int virtio_crypto_alg_ablkcipher_close_session(
 	       !virtqueue_is_broken(vcrypto->ctrl_vq))
 		cpu_relax();
 
-	if (destroy_session->status != VIRTIO_CRYPTO_OK) {
+	if (status != VIRTIO_CRYPTO_OK) {
 		printk(KERN_ERR "Close session failed "
-			"status = %u, session_id=0x%llx\n", destroy_session->status,
+			"status = %u, session_id=0x%llx\n", status,
 			destroy_session->session_id);
 		return -EINVAL;
 	}
@@ -244,9 +259,11 @@ __virtio_crypto_ablkcipher_do_req(struct virtio_crypto_request *vc_req,
 	unsigned long flags;
 	struct virtio_crypto_iovec *src_iovec = NULL;
 	struct virtio_crypto_iovec *dst_iovec = NULL;
-	struct scatterlist *sg;
+	struct scatterlist outhdr, iv_sg, status_sg, **sgs;
 	int i;
 	u64 dst_len;
+	unsigned int num_out = 0, num_in = 0;
+	int sg_total;
 
 	/* Use the first data virtqueue as default */
 	struct data_queue *data_vq = &vcrypto->data_vq[0];
@@ -259,13 +276,23 @@ __virtio_crypto_ablkcipher_do_req(struct virtio_crypto_request *vc_req,
 	DPRINTK("The number of scatterlist (src_nents"
 			" = %d, dst_nents = %d)\n", src_nents, dst_nents);
 
-	req_data = kzalloc_node(sizeof(*req_data), GFP_ATOMIC,
+	/* why 3?  outhdr + iv + inhdr */
+	sg_total = src_nents + dst_nents + 3;
+	sgs = kzalloc_node(sg_total * sizeof(*sgs), GFP_ATOMIC,
 				           dev_to_node(&vcrypto->vdev->dev));
-	if (!req_data) {
+	if (!sgs) {
 		printk(KERN_ERR "Failed to allocate memory.\n");
 		return -ENOMEM;
 	}
 
+	req_data = kzalloc_node(sizeof(*req_data), GFP_ATOMIC,
+				           dev_to_node(&vcrypto->vdev->dev));
+	if (!req_data) {
+		printk(KERN_ERR "Failed to allocate memory.\n");
+		kfree(sgs);
+		return -ENOMEM;
+	}
+	
 	vc_req->req_data = req_data;
 	vc_req->type = VIRTIO_CRYPTO_SYM_OP_CIPHER;
 	/* head of operation */
@@ -285,85 +312,37 @@ __virtio_crypto_ablkcipher_do_req(struct virtio_crypto_request *vc_req,
 	req_data->u.sym_req.u.cipher.para.dst_data_len = dst_len;
 	DPRINTK("src_len: %u, dst_len: %llu\n", req->nbytes, dst_len);
 
-	req_data->u.sym_req.u.cipher.odata.iv_addr = virt_to_phys(req->info);
+	/* Outhdr */
+	sg_init_one(&outhdr, req_data, sizeof(*req_data));
+	sgs[num_out++] = &outhdr;
 
-	if (src_nents > 1) {
-		src_iovec = kzalloc_node((src_nents - 1) * sizeof(*src_iovec), GFP_ATOMIC,
-				           dev_to_node(&vcrypto->vdev->dev));
-		if (!src_iovec) {
-			printk(KERN_ERR "Failed to allocate memory.\n");
-			kfree(req_data);
-			return -ENOMEM;
-		}
+	/* IV */
+	sg_init_one(&iv_sg, req->info, req_data->u.sym_req.u.cipher.para.iv_len);
+	sgs[num_out++] = &iv_sg;
+
+	/* Source data */
+	for (i = 0; i < src_nents; i++) {
+		sgs[num_out++] = &req->src[i];
 	}
 
-	if (!src_iovec) { /* single sg */
-		req_data->u.sym_req.u.cipher.odata.src_data.addr = sg_phys(req->src);
-		req_data->u.sym_req.u.cipher.odata.src_data.len = req->nbytes;
-		req_data->u.sym_req.u.cipher.odata.src_data.flags =
-		                                      ~VIRTIO_CRYPTO_IOVEC_F_NEXT;
-	} else { /* sg chain */
-		req_data->u.sym_req.u.cipher.odata.src_data.addr = sg_phys(&req->src[0]);
-		req_data->u.sym_req.u.cipher.odata.src_data.len = req->src[0].length;
-		req_data->u.sym_req.u.cipher.odata.src_data.flags =
-		                                      VIRTIO_CRYPTO_IOVEC_F_NEXT;
-		req_data->u.sym_req.u.cipher.odata.src_data.next_iovec =
-		                                        virt_to_phys(&src_iovec[0]);
-		for (i = 0, sg = &req->src[1]; sg; sg = sg_next(sg), i++) {
-			src_iovec[i].addr = sg_phys(sg);
-			src_iovec[i].len = sg->length;
-			if (i < (src_nents - 2)) {
-				src_iovec[i].flags = VIRTIO_CRYPTO_IOVEC_F_NEXT;
-				src_iovec[i].next_iovec = virt_to_phys(&src_iovec[i + 1]);
-			} else 
-				src_iovec[i].flags = ~VIRTIO_CRYPTO_IOVEC_F_NEXT;
-		}
-	}
-	
-	if (dst_nents > 1) {
-		dst_iovec = kzalloc_node((dst_nents - 1) * sizeof(*dst_iovec), GFP_ATOMIC,
-				           dev_to_node(&vcrypto->vdev->dev));
-		if (!dst_iovec) {
-			printk(KERN_ERR "Failed to allocate memory.\n");
-			kfree(req_data);
-			if (src_iovec)
-				kfree(src_iovec);
-			return -ENOMEM;
-		}
+	/* Destination data */
+	for (i = 0; i < dst_nents; i++) {
+		sgs[num_out + num_in++] = &req->dst[i];
 	}
 
-	if (!dst_iovec) { /* single sg */
-		req_data->u.sym_req.u.cipher.idata.input.dst_data.addr = sg_phys(req->dst);
-		req_data->u.sym_req.u.cipher.idata.input.dst_data.len = req->dst->length;
-		req_data->u.sym_req.u.cipher.idata.input.dst_data.flags =
-		                                        ~VIRTIO_CRYPTO_IOVEC_F_NEXT;
-	} else { /* sg chain */
-		
-		req_data->u.sym_req.u.cipher.idata.input.dst_data.addr = sg_phys(&req->dst[0]);
-		req_data->u.sym_req.u.cipher.idata.input.dst_data.len = req->dst[0].length;
-		req_data->u.sym_req.u.cipher.idata.input.dst_data.flags =
-		                                         VIRTIO_CRYPTO_IOVEC_F_NEXT;
-		req_data->u.sym_req.u.cipher.idata.input.dst_data.next_iovec =
-		                                           virt_to_phys(&dst_iovec[0]);
-		for (i = 0, sg = &req->dst[1]; sg; sg = sg_next(sg), i++) {
-			dst_iovec[i].addr = sg_phys(sg);
-			dst_iovec[i].len = sg->length;
-			if (i < (src_nents - 2)) {
-				dst_iovec[i].flags = VIRTIO_CRYPTO_IOVEC_F_NEXT;
-				dst_iovec[i].next_iovec = virt_to_phys(&dst_iovec[i + 1]);
-			} else 
-				dst_iovec[i].flags = ~VIRTIO_CRYPTO_IOVEC_F_NEXT;
-		}
-	}
+	/* Status */
+	sg_init_one(&status_sg, &vc_req->status, sizeof(vc_req->status));
+	sgs[num_out + num_in++] = &status_sg;
 
-	sg_set_buf(data_vq->sg, req_data, sizeof(*req_data));
+	vc_req->sgs = sgs;
 
 	spin_lock_irqsave(&vcrypto->lock, flags);
-	err = virtqueue_add_inbuf(vcrypto->data_vq->vq, data_vq->sg, 1,
-	                          vc_req, GFP_ATOMIC);
+	err = virtqueue_add_sgs(data_vq->vq, sgs, num_out,
+	                        num_in, vc_req, GFP_KERNEL);
 	spin_unlock_irqrestore(&vcrypto->lock, flags);
 	if (err < 0) {
 		kfree(req_data);
+		kfree(sgs);
 		if (src_iovec)
 			kfree(src_iovec);
 		if (dst_iovec)

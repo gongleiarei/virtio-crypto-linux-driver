@@ -34,7 +34,7 @@ static void virtcrypto_dataq_callback(struct virtqueue *vq)
 		virtqueue_disable_cb(vq);
 		while ((vc_req = virtqueue_get_buf(vq, &len)) != NULL) {
 			if (vc_req->type == VIRTIO_CRYPTO_SYM_OP_CIPHER) {
-				switch (vc_req->req_data->u.sym_req.u.cipher.idata.input.status) {
+				switch (vc_req->status) {
 				case VIRTIO_CRYPTO_OK:
 					error = 0;
 					break;
@@ -57,6 +57,7 @@ static void virtcrypto_dataq_callback(struct virtqueue *vq)
 			}
 			
 			kfree(vc_req->req_data);
+			kfree(vc_req->sgs);
 		}
 	} while (!virtqueue_enable_cb(vq));
 	spin_unlock_irqrestore(&vi->lock, flags);

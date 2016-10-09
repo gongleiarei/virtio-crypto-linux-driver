@@ -2,22 +2,8 @@
 #define _VIRTIO_CRYPTO_H
 
 #include <linux/types.h>
-//#include <linux/virtio_ids.h>
+#include <linux/virtio_ids.h>
 #include <linux/virtio_config.h>
-
-struct virtio_crypto_iovec {
-	/* Guest physical address */
-	__virtio64 addr;
-	/* Length of guest physical address */
-	__virtio32 len;
-
-/* This marks a buffer as continuing via the next field */
-#define VIRTIO_CRYPTO_IOVEC_F_NEXT 1
-	/* The flags as indicated above. */
-	__virtio32 flags;
-	/* Pointer to next struct virtio_crypto_iovec if flags & NEXT */
-	__virtio64 next_iovec;
-};
 
 
 #define VIRTIO_CRYPTO_SERVICE_CIPHER (0)
@@ -85,14 +71,8 @@ struct virtio_crypto_session_input {
 	__virtio32 padding;
 };
 
-struct virtio_crypto_cipher_session_output {
-	__virtio64 key_addr; /* guest key physical address */
-};
-
 struct virtio_crypto_cipher_session_req {
 	struct virtio_crypto_cipher_session_para para;
-	struct virtio_crypto_cipher_session_output out;
-	struct virtio_crypto_session_input input;
 };
 
 struct virtio_crypto_hash_session_para {
@@ -116,7 +96,6 @@ struct virtio_crypto_hash_session_para {
 
 struct virtio_crypto_hash_create_session_req {
 	struct virtio_crypto_hash_session_para para;
-	struct virtio_crypto_session_input input;
 };
 
 struct virtio_crypto_mac_session_para {
@@ -144,14 +123,8 @@ struct virtio_crypto_mac_session_para {
 	__virtio32 padding;
 };
 
-struct virtio_crypto_mac_session_output {
-	__virtio64 auth_key_addr; /* guest key physical address */
-};
-
 struct virtio_crypto_mac_create_session_req {
 	struct virtio_crypto_mac_session_para para;
-	struct virtio_crypto_mac_session_output out;
-	struct virtio_crypto_session_input input;
 };
 
 struct virtio_crypto_aead_session_para {
@@ -171,14 +144,8 @@ struct virtio_crypto_aead_session_para {
 	__virtio32 padding;
 };
 
-struct virtio_crypto_aead_session_output {
-	__virtio64 key_addr; /* guest key physical address */
-};
-
 struct virtio_crypto_aead_create_session_req {
 	struct virtio_crypto_aead_session_para para;
-	struct virtio_crypto_aead_session_output out;
-	struct virtio_crypto_session_input input;
 };
 
 struct virtio_crypto_alg_chain_session_para {
@@ -202,15 +169,8 @@ struct virtio_crypto_alg_chain_session_para {
 	__virtio32 padding;
 };
 
-struct virtio_crypto_alg_chain_session_output {
-	struct virtio_crypto_cipher_session_output cipher;
-	struct virtio_crypto_mac_session_output mac;
-};
-
 struct virtio_crypto_alg_chain_session_req {
 	struct virtio_crypto_alg_chain_session_para para;
-	struct virtio_crypto_alg_chain_session_output out;
-	struct virtio_crypto_session_input input;
 };
 
 struct virtio_crypto_sym_create_session_req {
@@ -235,9 +195,6 @@ struct virtio_crypto_sym_create_session_req {
 struct virtio_crypto_destroy_session_req {
 	/* Device-readable part */
 	__virtio64  session_id;
-	/* Device-writable part */
-	__virtio32  status;
-	__virtio32  padding;
 };
 
 /* The request of the control viritqueue's packet */
@@ -276,17 +233,20 @@ struct virtio_crypto_op_header {
 	__virtio32 padding;
 };
 
-struct virtio_crypto_sym_input {
-	/* destination data, it's useless for plain HASH and MAC */
-	struct virtio_crypto_iovec dst_data;
-	/* digest result guest address, it's useless for plain cipher algos */
-	__virtio64 digest_result_addr;
-
-	__virtio32 status;
-	__virtio32 padding;
-};
-
 struct virtio_crypto_cipher_para {
+	/*
+	 * Byte Length of valid IV/Counter
+	 *
+	 * - For block ciphers in CBC or F8 mode, or for Kasumi in F8 mode, or for
+	 *   SNOW3G in UEA2 mode, this is the length of the IV (which
+	 *   must be the same as the block length of the cipher).
+	 * - For block ciphers in CTR mode, this is the length of the counter
+	 *   (which must be the same as the block length of the cipher).
+	 * - For AES-XTS, this is the 128bit tweak, i, from IEEE Std 1619-2007.
+	 *
+	 * The IV/Counter will be updated after every partial cryptographic
+	 * operation.
+	 */
 	__virtio32 iv_len;
 	/* length of source data */
 	__virtio32 src_data_len;
@@ -295,36 +255,27 @@ struct virtio_crypto_cipher_para {
 	__virtio32 padding;
 };
 
-struct virtio_crypto_cipher_input {
-	struct virtio_crypto_sym_input input;
+struct virtio_crypto_hash_para {
+	/* length of source data */
+	__virtio32 src_data_len;
+	/* hash result length */
+	__virtio32 hash_result_len;
 };
 
-struct virtio_crypto_cipher_output {
-	/* iv guest address */
-	__virtio64 iv_addr;
-	/* source data */
-	struct virtio_crypto_iovec src_data;
-};
-
-struct virtio_crypto_hash_input {
-	struct virtio_crypto_sym_input input;
-};
-
-struct virtio_crypto_hash_output {
-	/* source data */
-	struct virtio_crypto_iovec src_data;
-	__virtio32 padding;
-};
-
-struct virtio_crypto_mac_input {
-	struct virtio_crypto_sym_input input;
-};
-
-struct virtio_crypto_mac_output {
-	struct virtio_crypto_hash_output hash_output;
+struct virtio_crypto_mac_para {
+	struct virtio_crypto_hash_para hash;
 };
 
 struct virtio_crypto_aead_para {
+	/*
+	 * Byte Length of valid IV data pointed to by the below iv_addr
+	 * parameter.
+	 *
+	 * - For GCM mode, this is either 12 (for 96-bit IVs) or 16, in which
+	 *   case iv_addr points to J0.
+	 * - For CCM mode, this is the length of the nonce, which can be in the
+	 *   range 7 to 13 inclusive.
+	 */
 	__virtio32 iv_len;
 	/* length of additional auth data */
 	__virtio32 aad_len;
@@ -334,62 +285,36 @@ struct virtio_crypto_aead_para {
 	__virtio32 dst_data_len;
 };
 
-struct virtio_crypto_aead_input {
-	struct virtio_crypto_sym_input input;
-};
-
-struct virtio_crypto_aead_output {
-	__virtio64 iv_addr; /* iv guest address */
-	/* source data */
-	struct virtio_crypto_iovec src_data;
-	/* additional auth data guest address */
-	struct virtio_crypto_iovec add_data;
-};
-
 struct virtio_crypto_cipher_data_req {
 	/* Device-readable part */
 	struct virtio_crypto_cipher_para para;
-	struct virtio_crypto_cipher_output odata;
-	/* Device-writable part */
-	struct virtio_crypto_cipher_input idata;
 };
 
 struct virtio_crypto_hash_data_req {
 	/* Device-readable part */
-	struct virtio_crypto_hash_output odata;
-	/* Device-writable part */
-	struct virtio_crypto_hash_input idata;
+	struct virtio_crypto_hash_para para;
 };
 
 struct virtio_crypto_mac_data_req {
 	/* Device-readable part */
-	struct virtio_crypto_mac_output odata;
-	/* Device-writable part */
-	struct virtio_crypto_mac_input idata;
+	struct virtio_crypto_mac_para para;
 };
 
 struct virtio_crypto_alg_chain_data_para {
 	struct virtio_crypto_cipher_para cipher;
-};
-
-struct virtio_crypto_alg_chain_data_output {
-	/* Device-readable part */
-	struct virtio_crypto_cipher_output cipher;
-	struct virtio_crypto_hash_output hash;
-	/* Additional auth data guest address */
-	struct virtio_crypto_iovec add_data;
-};
-
-struct virtio_crypto_alg_chain_data_input {
-	struct virtio_crypto_sym_input input;
+	/* Starting point for hash processing in source data */
+	__virtio32 hash_start_src_offset;
+	/* Length of the source data that the hash will be computed on */
+	__virtio32 len_to_hash;
+	/* Length of the additional auth data */
+	__virtio32 aad_len;
+	/* Length of the hash result */
+	__virtio32 hash_result_len;
 };
 
 struct virtio_crypto_alg_chain_data_req {
 	/* Device-readable part */
 	struct virtio_crypto_alg_chain_data_para para;
-	struct virtio_crypto_alg_chain_data_output odata;
-	/* Device-writable part */
-	struct virtio_crypto_alg_chain_data_input idata;
 };
 
 struct virtio_crypto_sym_data_req {
@@ -397,8 +322,6 @@ struct virtio_crypto_sym_data_req {
 		struct virtio_crypto_cipher_data_req cipher;
 		struct virtio_crypto_alg_chain_data_req chain;
 	} u;
-
-	/* Device-readable part */
 
 	/* See above VIRTIO_CRYPTO_SYM_OP_* */
 	__virtio32 op_type;
@@ -408,9 +331,6 @@ struct virtio_crypto_sym_data_req {
 struct virtio_crypto_aead_data_req {
 	/* Device-readable part */
 	struct virtio_crypto_aead_para para;
-	struct virtio_crypto_aead_output odata;
-	/* Device-writable part */
-	struct virtio_crypto_aead_input idata;
 };
 
 /* The request of the data viritqueue's packet */

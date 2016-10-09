@@ -79,9 +79,11 @@ struct virtio_crypto_ablkcipher_ctx {
 struct virtio_crypto_request {
 	/* cipher or aead */
 	uint32_t type;
+	uint32_t status;
 	struct virtio_crypto_ablkcipher_ctx *ablkcipher_ctx;
 	struct ablkcipher_request *ablkcipher_req;
 	struct virtio_crypto_op_data_req *req_data;
+	struct scatterlist **sgs;
 };
 
 int virtcrypto_devmgr_add_dev(struct virtio_crypto *vcrypto_dev);
